@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>今天吃什麼？</title>
+<style>
+  :root {
+    --bg: #fff8f0;
+    --card: #ffffff;
+    --text: #3a2e2a;
+    --muted: #8a7a72;
+    --accent: #ff7a45;
+    --accent-dark: #e55f2b;
+    --border: #f0e2d6;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "Microsoft JhengHei", "PingFang TC", "Noto Sans TC", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    padding: 24px 16px;
+  }
+  .app { width: 100%; max-width: 480px; }
+  h1 { text-align: center; margin: 0 0 4px; font-size: 2rem; }
+  .sub { text-align: center; color: var(--muted); margin: 0 0 20px; }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 20px;
+    margin-bottom: 16px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+  }
+  .wheel-wrap { position: relative; width: 100%; max-width: 320px; margin: 0 auto; aspect-ratio: 1; }
+  canvas { width: 100%; height: 100%; display: block; }
+  .pointer {
+    position: absolute; top: -6px; left: 50%; transform: translateX(-50%);
+    width: 0; height: 0;
+    border-left: 14px solid transparent; border-right: 14px solid transparent;
+    border-top: 26px solid var(--text);
+    z-index: 2;
+  }
+  .result { text-align: center; font-size: 1.5rem; font-weight: bold; min-height: 2.2em; margin: 14px 0 8px; }
+  button {
+    font-family: inherit; font-size: 1rem; cursor: pointer;
+    border: none; border-radius: 10px; padding: 10px 16px;
+  }
+  .spin {
+    display: block; width: 100%; padding: 14px; font-size: 1.2rem; font-weight: bold;
+    background: var(--accent); color: #fff;
+  }
+  .spin:hover { background: var(--accent-dark); }
+  .spin:disabled { opacity: .5; cursor: not-allowed; }
+  .row { display: flex; gap: 8px; }
+  input[type=text] {
+    flex: 1; font-family: inherit; font-size: 1rem; padding: 10px 12px;
+    border: 1px solid var(--border); border-radius: 10px; min-width: 0;
+  }
+  .add { background: var(--text); color: #fff; }
+  h2 { font-size: 1.1rem; margin: 0 0 12px; }
+  .tags { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  .tag {
+    background: var(--bg); border: 1px solid var(--border); border-radius: 999px;
+    padding: 6px 8px 6px 12px; display: flex; align-items: center; gap: 4px;
+  }
+  .tag button { background: none; padding: 0 4px; color: var(--muted); font-size: 1.1rem; }
+  .tag button:hover { color: var(--accent-dark); }
+  .presets { display: flex; flex-wrap: wrap; gap: 8px; }
+  .presets button { background: var(--bg); border: 1px solid var(--border); }
+  .presets button:hover { border-color: var(--accent); }
+  ul { list-style: none; padding: 0; margin: 0; }
+  li { padding: 6px 0; border-bottom: 1px dashed var(--border); display: flex; justify-content: space-between; }
+  li span { color: var(--muted); font-size: .9rem; }
+  .empty { color: var(--muted); font-size: .9rem; }
+  .link { background: none; color: var(--muted); padding: 0; font-size: .9rem; text-decoration: underline; float: right; }
+</style>
+</head>
+<body>
+<div class="app">
+  <h1>🍱 今天吃什麼？</h1>
+  <p class="sub">選擇困難救星，轉一下就決定</p>
+
+  <div class="card">
+    <div class="wheel-wrap">
+      <div class="pointer"></div>
+      <canvas id="wheel" width="640" height="640"></canvas>
+    </div>
+    <div class="result" id="result">按下按鈕開始轉！</div>
+    <button class="spin" id="spinBtn">🎯 轉起來</button>
+  </div>
+
+  <div class="card">
+    <h2>選項（<span id="count">0</span>）</h2>
+    <div class="row">
+      <input type="text" id="newItem" placeholder="輸入想吃的，例如：拉麵" maxlength="12">
+      <button class="add" id="addBtn">新增</button>
+    </div>
+    <div class="tags" id="tags"></div>
+  </div>
+
+  <div class="card">
+    <h2>快速套用</h2>
+    <div class="presets" id="presets"></div>
+  </div>
+
+  <div class="card">
+    <h2>最近結果 <button class="link" id="clearHist">清除</button></h2>
+    <ul id="history"></ul>
+  </div>
+</div>
+
+<script>
+  const PRESETS = {
+    "🍜 午餐": ["便當", "拉麵", "滷肉飯", "水餃", "麥當勞", "牛肉麵", "自助餐", "義大利麵"],
+    "🌙 宵夜": ["鹹酥雞", "泡麵", "滷味", "炒泡麵", "蔥抓餅", "7-11"],
+    "🥤 飲料": ["珍奶", "紅茶拿鐵", "四季春", "冬瓜茶", "美式咖啡", "多多綠"]
+  };
+  const COLORS = ["#ff7a45", "#ffc53d", "#73d13d", "#40a9ff", "#9254de", "#f759ab", "#36cfc9", "#ff9c6e"];
+
+  const canvas = document.getElementById("wheel");
+  const ctx = canvas.getContext("2d");
+  const resultEl = document.getElementById("result");
+  const spinBtn = document.getElementById("spinBtn");
+  const input = document.getElementById("newItem");
+
+  function load(key, fallback) {
+    try { const v = JSON.parse(localStorage.getItem(key)); return v ?? fallback; }
+    catch (e) { return fallback; }
+  }
+  function save(key, value) {
+    try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) {}
+  }
+
+  let items = load("eat-items", PRESETS["🍜 午餐"].slice());
+  let history = load("eat-history", []);
+  let angle = 0;
+  let spinning = false;
+
+  function drawWheel() {
+    const size = canvas.width, c = size / 2, r = c - 8;
+    ctx.clearRect(0, 0, size, size);
+    if (items.length === 0) {
+      ctx.fillStyle = "#eee";
+      ctx.beginPath(); ctx.arc(c, c, r, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "#999"; ctx.font = "32px sans-serif"; ctx.textAlign = "center";
+      ctx.fillText("先新增選項", c, c + 10);
+      return;
+    }
+    const slice = Math.PI * 2 / items.length;
+    items.forEach((item, i) => {
+      const start = angle + i * slice - Math.PI / 2;
+      ctx.beginPath();
+      ctx.moveTo(c, c);
+      ctx.arc(c, c, r, start, start + slice);
+      ctx.closePath();
+      ctx.fillStyle = COLORS[i % COLORS.length];
+      ctx.fill();
+      ctx.strokeStyle = "#fff"; ctx.lineWidth = 4; ctx.stroke();
+
+      ctx.save();
+      ctx.translate(c, c);
+      ctx.rotate(start + slice / 2);
+      ctx.fillStyle = "#fff";
+      ctx.font = "bold 30px 'Microsoft JhengHei', sans-serif";
+      ctx.textAlign = "right";
+      ctx.textBaseline = "middle";
+      ctx.fillText(item, r - 24, 0);
+      ctx.restore();
+    });
+    ctx.beginPath(); ctx.arc(c, c, 36, 0, Math.PI * 2);
+    ctx.fillStyle = "#fff"; ctx.fill();
+  }
+
+  function renderTags() {
+    const box = document.getElementById("tags");
+    box.innerHTML = "";
+    items.forEach((item, i) => {
+      const tag = document.createElement("div");
+      tag.className = "tag";
+      tag.textContent = item;
+      const del = document.createElement("button");
+      del.textContent = "×";
+      del.title = "刪除";
+      del.onclick = () => { items.splice(i, 1); update(); };
+      tag.appendChild(del);
+      box.appendChild(tag);
+    });
+    document.getElementById("count").textContent = items.length;
+    spinBtn.disabled = items.length < 2;
+  }
+
+  function renderHistory() {
+    const ul = document.getElementById("history");
+    ul.innerHTML = "";
+    if (history.length === 0) {
+      ul.innerHTML = '<p class="empty">還沒有紀錄</p>';
+      return;
+    }
+    history.forEach(h => {
+      const li = document.createElement("li");
+      li.textContent = h.item;
+      const t = document.createElement("span");
+      t.textContent = h.time;
+      li.appendChild(t);
+      ul.appendChild(li);
+    });
+  }
+
+  function update() {
+    save("eat-items", items);
+    drawWheel();
+    renderTags();
+  }
+
+  function addItem() {
+    const v = input.value.trim();
+    if (!v) return;
+    if (items.includes(v)) { input.value = ""; return; }
+    items.push(v);
+    input.value = "";
+    update();
+  }
+
+  function spin() {
+    if (spinning || items.length < 2) return;
+    spinning = true;
+    spinBtn.disabled = true;
+    resultEl.textContent = "轉轉轉……";
+
+    const startAngle = angle;
+    const total = Math.PI * 2 * (5 + Math.random() * 3) + Math.random() * Math.PI * 2;
+    const duration = 3500;
+    const t0 = performance.now();
+
+    function frame(now) {
+      const p = Math.min((now - t0) / duration, 1);
+      const ease = 1 - Math.pow(1 - p, 3);
+      angle = startAngle + total * ease;
+      drawWheel();
+      if (p < 1) { requestAnimationFrame(frame); return; }
+
+      // 指針在正上方：找出目前落在上方的那一格
+      const slice = Math.PI * 2 / items.length;
+      const norm = ((-angle) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2);
+      const winner = items[Math.floor(norm / slice) % items.length];
+      resultEl.textContent = "就吃：" + winner + "！🎉";
+
+      const d = new Date();
+      const time = (d.getMonth() + 1) + "/" + d.getDate() + " " +
+        String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+      history.unshift({ item: winner, time });
+      history = history.slice(0, 8);
+      save("eat-history", history);
+      renderHistory();
+
+      spinning = false;
+      spinBtn.disabled = false;
+    }
+    requestAnimationFrame(frame);
+  }
+
+  const presetBox = document.getElementById("presets");
+  Object.keys(PRESETS).forEach(name => {
+    const b = document.createElement("button");
+    b.textContent = name;
+    b.onclick = () => { if (!spinning) { items = PRESETS[name].slice(); update(); } };
+    presetBox.appendChild(b);
+  });
+
+  document.getElementById("addBtn").onclick = addItem;
+  input.addEventListener("keydown", e => { if (e.key === "Enter") addItem(); });
+  spinBtn.onclick = spin;
+  document.getElementById("clearHist").onclick = () => { history = []; save("eat-history", history); renderHistory(); };
+
+  update();
+  renderHistory();
+</script>
+</body>
+</html>
